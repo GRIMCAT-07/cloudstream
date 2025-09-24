@@ -1,0 +1,63 @@
+name: Pre-release
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - '*.md'
+      - '*.json'
+      - '**/wcokey.txt'
+
+concurrency: 
+  group: "pre-release"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repo
+      - uses: actions/checkout@v4
+
+      # Set up Java
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+
+      # Make gradlew executable
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # Setup your own keystore from secrets
+      - name: Setup keystore
+        run: |
+          mkdir -p "${RUNNER_TEMP}/keystore"
+          echo "${{ secrets.KEYSTORE }}" | base64 --decode > "${RUNNER_TEMP}/keystore/prerelease_keystore.keystore"
+
+      # Run Gradle build with signing
+      - name: Run Gradle
+        run: |
+          ./gradlew assemblePrerelease build androidSourcesJar
+          ./gradlew makeJar
+        env:
+          SIGNING_KEY_ALIAS: ${{ secrets.KEYSTORE_ENTRY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEYSTORE_ENTRY_PASSWORD }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          SIMKL_CLIENT_SECRET: ${{ secrets.SIMKL_CLIENT_SECRET }}
+          MDL_API_KEY: ${{ secrets.MDL_API_KEY }}
+
+      # Create a pre-release with the APKs and JARs
+      - name: Create pre-release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: "pre-release"
+          prerelease: true
+          title: "Pre-release Build"
+          files: |
+            app/build/outputs/apk/prerelease/release/*.apk
+            app/build/libs/app-sources.jar
+            app/build/classes.jar
